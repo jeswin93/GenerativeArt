@@ -48,6 +48,8 @@ def get_batch_norm_1d(batch_norm, feature_count):
 class GatedNonLinearity(nn.Module):
     def __init__(self):
         super(GatedNonLinearity, self).__init__()
+        self.sigmoid = nn.Sigmoid()
+        self.tanh= nn.Tanh()
 
     def forward(self, input, condition):
         a = input[:, ::2]
@@ -57,7 +59,7 @@ class GatedNonLinearity(nn.Module):
         if c is not None and d is not None:
             a = a + c
             b = b + d
-        return F.sigmoid(a) * F.tanh(b)
+        return self.sigmoid(a) * self.tanh(b)
 
 
 class GANGenerator(nn.Module):
@@ -69,6 +71,7 @@ class GANGenerator(nn.Module):
         self.input_layer = get_linear(latent_dim + num_classes, 8 * 4 * 4 * model_dim * 2)
         self.num_classes = num_classes
 
+        self.batch_norm_1 = get_batch_norm_2d(self.batch_normal, 8 * self.model_dim * 2)
         self.conditioning_1 = nn.Linear(num_classes, 8 * 4 * 4 * model_dim * 2)
         self.gated_nonlinearity = GatedNonLinearity()
         self.upsampling_1 = nn.Sequential(
@@ -95,7 +98,7 @@ class GANGenerator(nn.Module):
 
         input = self.input_layer(noise)
         input = input.reshape(-1, 8 * self.model_dim * 2, 4, 4)
-        input = get_batch_norm_2d(self.batch_normal, 8 * self.model_dim * 2)(input)
+        input = self.batch_norm_1(input)
         conditioning = self.conditioning_1(class_vec).reshape(-1, 8 * self.model_dim * 2, 4, 4)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_1(input)
@@ -148,6 +151,7 @@ class GANDiscriminator(nn.Module):
 
         self.source_output = nn.Linear(4 * 4 * 8 * model_dim, 1)
         self.class_output = nn.Linear(4 * 4 * 8 * model_dim, num_class)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.conv_layer(x)
@@ -155,6 +159,8 @@ class GANDiscriminator(nn.Module):
         x = flatten(x)
         out_source = self.source_output(x)
         out_class = self.class_output(x)
+        out_class = self.sigmoid(out_class)
+        out_source = self.sigmoid(out_source)
         return out_source, out_class
 
 

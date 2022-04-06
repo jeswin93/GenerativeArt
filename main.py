@@ -7,7 +7,7 @@ from torch.utils.data.dataloader import DataLoader
 
 batch_size = 10
 model_dim = 64
-num_classes = 12
+num_classes = 2
 latent_dim = 128
 hardcoded_noise_file = 'hardcoded_noise_9.npy'
 
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
     epochs = 200
     trainer = Trainer(generator, discriminator, gen_optim, disc_optim)
-    dataset = WikiArt('')
+    dataset = WikiArt('wikiart_res_64')
     data_loader = DataLoader(dataset, )
     trainer.train(data_loader, epochs, save_training_gif=True)
 
