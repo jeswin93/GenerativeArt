@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 
 
 class WikiArt(torch.utils.data.Dataset):
-    def __init__(self, img_dir, img_size):
+    def __init__(self, img_dir):
         subdirectories = os.listdir(img_dir)
         self.num_categories = len(subdirectories)
 
@@ -17,7 +17,6 @@ class WikiArt(torch.utils.data.Dataset):
                 lambda x: (i, f"{img_dir}/{subdirectory}/{x}"),
                 os.listdir(f"{img_dir}/{subdirectory}"),
             )
-        self.img_size = img_size
         self.to_tensor = transforms.ToTensor()
 
 

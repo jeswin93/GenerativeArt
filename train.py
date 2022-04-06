@@ -84,7 +84,7 @@ class Trainer:
         interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
         interpolated.to(self.device)
 
-        prob_interpolated = self.discriminator(interpolated)
+        prob_interpolated, _ = self.discriminator(interpolated)
 
         gradients = torch_grad(outputs=prob_interpolated, inputs=interpolated,
                                grad_outputs=torch.ones(
@@ -122,8 +122,10 @@ class Trainer:
             self._train_epoch(data_loader)
 
             if save_training_gif:
-                fixed_latents = torch.from_numpy(np.load('hardcoded_noise_9.npy')).to(self.device)
-                img_grid = make_grid(self.generator(fixed_latents).cpu().data)
+                sample_count = 8*8
+                fixed_latents = torch.from_numpy(np.load(f'hardcoded_noise_{sample_count}.npy')).to(self.device)
+                fixed_classes = torch.from_numpy(np.load(f'hardcoded_class_{sample_count}.npy')).to(self.device)
+                img_grid = make_grid(self.generator(fixed_classes, fixed_latents).cpu().data)
                 img_grid = np.transpose(img_grid.numpy(), (1, 2, 0))
                 imageio.imwrite(f'output/epoch_{epoch}.png', img_grid)
                 training_progress_images.append(img_grid)
