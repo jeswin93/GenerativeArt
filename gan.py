@@ -61,81 +61,93 @@ class GatedNonLinearity(nn.Module):
 
 
 class GANGenerator(nn.Module):
-    def __init__(self,num_classes, dim, non_linearity, batch_normal, n_samples = 128):
+    def __init__(self, num_classes, model_dim, batch_normal, latent_dim=128):
         super(GANGenerator, self).__init__()
         self.batch_normal = batch_normal
-        self.dim = dim
-        self.input_layer = get_linear(n_samples + num_classes, 8 * 4 * 4 * dim * 2)
+        self.model_dim = model_dim
+        self.latent_dim = latent_dim
+        self.input_layer = get_linear(latent_dim + num_classes, 8 * 4 * 4 * model_dim * 2)
+        self.num_classes = num_classes
 
-        self.conditioning_1 = nn.Linear(num_classes, 8 * 4 * 4 * dim * 2)
+        self.conditioning_1 = nn.Linear(num_classes, 8 * 4 * 4 * model_dim * 2)
         self.gated_nonlinearity = GatedNonLinearity()
         self.upsampling_1 = nn.Sequential(
-            get_conv_trans(8 * dim, 4 * dim * 2),
-            get_batch_norm_2d(self.batch_normal, 4 * dim * 2))
+            get_conv_trans(8 * model_dim, 4 * model_dim * 2),
+            get_batch_norm_2d(self.batch_normal, 4 * model_dim * 2))
 
-        self.conditioning_2 = get_linear(num_classes, 4 * 8 * 8 * dim * 2)
+        self.conditioning_2 = get_linear(num_classes, 4 * 8 * 8 * model_dim * 2)
         self.upsampling_2 = nn.Sequential(
-            get_conv_trans(4 * dim, 2 * dim * 2),
-            get_batch_norm_2d(self.batch_normal, 2 * dim * 2)
+            get_conv_trans(4 * model_dim, 2 * model_dim * 2),
+            get_batch_norm_2d(self.batch_normal, 2 * model_dim * 2)
         )
 
-        self.conditioning_3 = get_linear(num_classes, 2 * 16 * 16 * dim * 2)
+        self.conditioning_3 = get_linear(num_classes, 2 * 16 * 16 * model_dim * 2)
         self.upsampling_3 = nn.Sequential(
-            get_conv_trans(2 * dim, dim * 2),
-            get_batch_norm_2d(self.batch_normal, dim * 2)
+            get_conv_trans(2 * model_dim, model_dim * 2),
+            get_batch_norm_2d(self.batch_normal, model_dim * 2)
         )
 
-        self.conditioning_4 = get_linear(num_classes, 32 * 32 * dim * 2)
-        self.upsampling_4 = get_conv_trans(dim, 3)
+        self.conditioning_4 = get_linear(num_classes, 32 * 32 * model_dim * 2)
+        self.upsampling_4 = get_conv_trans(model_dim, 3)
 
     def forward(self, class_vec, noise):
         noise = torch.cat([noise, class_vec], dim=-1)
 
         input = self.input_layer(noise)
-        input = input.reshape(-1, 8 * self.dim * 2, 4, 4)
-        input = get_batch_norm_2d(self.batch_normal, 8 * self.dim * 2)(input)
-        conditioning = self.conditioning_1(class_vec).reshape(-1, 8 * self.dim * 2, 4, 4)
+        input = input.reshape(-1, 8 * self.model_dim * 2, 4, 4)
+        input = get_batch_norm_2d(self.batch_normal, 8 * self.model_dim * 2)(input)
+        conditioning = self.conditioning_1(class_vec).reshape(-1, 8 * self.model_dim * 2, 4, 4)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_1(input)
-        conditioning = self.conditioning_2(class_vec).reshape(-1, 4 * self.dim * 2, 8, 8)
+        conditioning = self.conditioning_2(class_vec).reshape(-1, 4 * self.model_dim * 2, 8, 8)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_2(input)
-        conditioning = self.conditioning_3(class_vec).reshape(-1, 2 * self.dim * 2, 16, 16)
+        conditioning = self.conditioning_3(class_vec).reshape(-1, 2 * self.model_dim * 2, 16, 16)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_3(input)
-        conditioning = self.conditioning_4(class_vec).reshape(-1, self.dim * 2, 32, 32)
+        conditioning = self.conditioning_4(class_vec).reshape(-1, self.model_dim * 2, 32, 32)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_4(input)
         output = F.tanh(input)
         return output
 
+    def sample_noise(self, batch_size):
+        return torch.randn([batch_size, self.latent_dim])
+
+    def gen_class_vec(self, batch_size):
+        class_vec = torch.zeros([batch_size, self.num_classes], dtype=torch.float32)
+        batch_ind = torch.arange(batch_size)
+        clas_ind = torch.randint(0, self.num_classes, [batch_size])
+        class_vec[batch_ind, clas_ind] = 1
+        return class_vec
+
 
 class GANDiscriminator(nn.Module):
-    def __init__(self, num_class, dim, non_linearity: Nonlinearity, batch_norm: bool):
+    def __init__(self, num_class, model_dim, non_linearity: Nonlinearity, batch_norm: bool):
         super(GANDiscriminator, self).__init__()
 
-        self.dim = dim
+        self.model_dim = model_dim
         self.non_linearity = non_linearity
         self.batch_norm = batch_norm
         self.conv_layer = nn.Sequential(
             # block 1
-            get_conv(3, dim),
+            get_conv(3, model_dim),
             get_nonlinearity(non_linearity),
             # block 2
-            get_conv(dim, 2 * dim),
-            get_batch_norm_2d(batch_norm, 2 * dim),
+            get_conv(model_dim, 2 * model_dim),
+            get_batch_norm_2d(batch_norm, 2 * model_dim),
             get_nonlinearity(non_linearity),
             # block 3
-            get_conv(2 * dim, 4 * dim),
-            get_batch_norm_2d(batch_norm, 4 * dim),
+            get_conv(2 * model_dim, 4 * model_dim),
+            get_batch_norm_2d(batch_norm, 4 * model_dim),
             get_nonlinearity(non_linearity),
             # block 4
-            get_conv(4 * dim, 8 * dim),
-            get_batch_norm_2d(batch_norm, 8 * dim),
+            get_conv(4 * model_dim, 8 * model_dim),
+            get_batch_norm_2d(batch_norm, 8 * model_dim),
         )
 
-        self.source_output = nn.Linear(4 * 4 * 8 * dim, 1)
-        self.class_output = nn.Linear(4 * 4 * 8 * dim, num_class)
+        self.source_output = nn.Linear(4 * 4 * 8 * model_dim, 1)
+        self.class_output = nn.Linear(4 * 4 * 8 * model_dim, num_class)
 
     def forward(self, x):
         x = self.conv_layer(x)

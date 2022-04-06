@@ -1,25 +1,142 @@
-import torch
-from torch.utils.data import DataLoader
+import imageio
+import numpy as np
+import torch.functional as F
+from torch.autograd import grad as torch_grad
+from torchvision.utils import make_grid
 
-from dataset import WikiArt
-from gan import GANDiscriminator, Nonlinearity, GANGenerator
+from gan import *
 
-# Temp testing code
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(DEVICE)
-dataset = WikiArt("D:\\Datasets\\WikiArt2\\images", 64)
-loader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=6)
 
-if __name__ == '__main__':
-    disc = GANDiscriminator(14, 64, Nonlinearity.LeakyRelu, True).to(DEVICE)
-    gen = GANGenerator(14, 64, Nonlinearity.LeakyRelu, True).to(DEVICE)
+class Trainer:
+    def __init__(self, generator: GANGenerator, discriminator: GANDiscriminator, gen_optim, disc_optim,
+                 gp_weight=10, critic_iterations=5, print_every=50,
+                 device='cuda'):
+        self.generator: GANGenerator = generator
+        self.gen_optim = gen_optim
+        self.discriminator = discriminator
+        self.disc_optim = disc_optim
+        self.losses = {'G': [], 'D_real': [], 'D_fake': [], 'GP': [], 'gradient_norm': []}
+        self.num_steps = 0
+        self.device = device
+        self.gp_weight = gp_weight
+        self.disc_iterations = critic_iterations
+        self.print_every = print_every
 
-    for images, class_vecs in loader:
-        images = images.to(DEVICE)
-        class_vecs = class_vecs.to(DEVICE)
+        self.generator.to(device)
+        self.discriminator.to(device)
 
-        disc(images)
+    def disc_train_step(self, real_imgs, real_classes):
 
-        noise = torch.randn([32, 128])
-        x = gen(class_vecs, noise)
-        print(x)
+        batch_size = real_imgs.size()[0]
+        fake_imgs, fake_classes = self.sample_generator(batch_size)
+
+        real_imgs.to(self.device)
+        real_classes.to(self.device)
+
+        disc_source_real, disc_class_real = self.discriminator(real_imgs)
+        disc_source_real_loss = F.binary_cross_entropy(disc_source_real,
+                                                       torch.ones_like(disc_source_real, dtype=torch.float32).to(
+                                                           self.device))
+        disc_class_real_loss = F.binary_cross_entropy(disc_class_real, real_classes)
+
+        disc_real_loss = disc_source_real_loss + disc_class_real_loss
+        disc_real_loss.backward()
+        disc_source_fake, disc_class_fake = self.discriminator(fake_imgs)
+
+        disc_source_fake_loss = F.binary_cross_entropy(disc_source_fake,
+                                                       torch.zeros_like(disc_source_fake, dtype=torch.float32).to(
+                                                           self.device))
+        disc_class_fake_loss = F.binary_cross_entropy(disc_class_fake, fake_classes)
+
+        gradient_penalty = self.gradient_penalty(real_imgs, fake_imgs)
+        self.losses['GP'].append(gradient_penalty.data[0])
+
+        self.disc_optim.zero_grad()
+        disc_fake_loss = disc_class_fake_loss + disc_source_fake_loss + gradient_penalty
+        disc_fake_loss.backward()
+
+        self.disc_optim.step()
+
+        self.losses['D_real'].append(disc_real_loss.data[0])
+        self.losses['D_fake'].append(disc_fake_loss.data[0])
+
+    def gen_train_step(self, data):
+        """ """
+        self.gen_optim.zero_grad()
+
+        batch_size = data.size()[0]
+        fake_image, fake_classes = self.sample_generator(batch_size)
+
+        disc_source_fake, disc_class_fake = self.discriminator(fake_image)
+        gen_source_loss = F.binary_cross_entropy(disc_source_fake, torch.ones_like(disc_source_fake, dtype=torch.float32))
+        gen_class_loss = F.binary_cross_entropy(fake_classes, disc_class_fake)
+        gen_loss = gen_source_loss + gen_class_loss
+        gen_loss.backward()
+        self.gen_optim.step()
+
+        self.losses['G'].append(gen_loss.data[0])
+
+    def gradient_penalty(self, real_data, generated_data):
+        batch_size = real_data.size()[0]
+
+        alpha = torch.rand(batch_size, 1, 1, 1)
+        alpha = alpha.expand_as(real_data)
+        interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
+        interpolated.to(self.device)
+
+        prob_interpolated = self.discriminator(interpolated)
+
+        gradients = torch_grad(outputs=prob_interpolated, inputs=interpolated,
+                               grad_outputs=torch.ones(
+                                   prob_interpolated.size()).to(self.device),
+                               create_graph=True, retain_graph=True)[0]
+
+        gradients = gradients.view(batch_size, -1)
+        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data[0])
+
+        gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
+
+        return self.gp_weight * ((gradients_norm - 1) ** 2).mean()
+
+    def _train_epoch(self, data_loader):
+        for i, data in enumerate(data_loader):
+            images, class_vecs = data
+            self.num_steps += 1
+            self.disc_train_step(images, class_vecs)
+            if self.num_steps % self.disc_iterations == 0:
+                self.gen_train_step(images)
+
+            if i % self.print_every == 0:
+                print("Iteration {}".format(i + 1))
+                print("D: {}".format(self.losses['D_real'][-1]))
+                print("GP: {}".format(self.losses['GP'][-1]))
+                print("Gradient norm: {}".format(self.losses['gradient_norm'][-1]))
+                if self.num_steps > self.disc_iterations:
+                    print("G: {}".format(self.losses['G'][-1]))
+
+    def train(self, data_loader, epochs, save_training_gif=True):
+
+        training_progress_images = []
+
+        for epoch in range(epochs):
+            self._train_epoch(data_loader)
+
+            if save_training_gif:
+                fixed_latents = torch.from_numpy(np.load('hardcoded_noise_9.npy')).to(self.device)
+                img_grid = make_grid(self.generator(fixed_latents).cpu().data)
+                img_grid = np.transpose(img_grid.numpy(), (1, 2, 0))
+                imageio.imwrite(f'output/epoch_{epoch}.png', img_grid)
+                training_progress_images.append(img_grid)
+
+        if save_training_gif:
+            imageio.mimsave(f'output/training_{epochs}_epochs.gif',
+                            training_progress_images)
+
+    def sample_generator(self, batch_size):
+        sample_noise = self.generator.sample_noise(batch_size)
+        class_vec = self.generator.gen_class_vec(batch_size)
+        sample_noise = sample_noise.to(self.device)
+        class_vec = class_vec.to(self.device)
+        generated_data = self.generator(class_vec, sample_noise)
+        return generated_data, class_vec
+
