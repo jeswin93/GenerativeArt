@@ -147,12 +147,12 @@ class GANDiscriminator(nn.Module):
 
 
 if __name__ == '__main__':
-    pass
-    # disc = GANDiscriminator(10, 64, Nonlinearity.LeakyRelu, True)
-    # input = torch.randn([1, 3, 64, 64])
-    # disc(input)
-    # gen = GANGenerator(10, 64, Nonlinearity.LeakyRelu, True)
-    # class_vec = torch.zeros([1, 10])
-    # class_vec[0, 0] = 1
-    # noise = torch.randn([1, 128])
-    # gen(class_vec, noise)
+    disc = GANDiscriminator(10, 64, Nonlinearity.LeakyRelu, True)
+    input = torch.randn([1, 3, 64, 64])
+    disc(input)
+    gen = GANGenerator(10, 64, Nonlinearity.LeakyRelu, True)
+    class_vec = torch.zeros([1, 10])
+    class_vec[0, 0] = 1
+    noise = torch.randn([1, 128])
+    x = gen(class_vec, noise)
+    print(x)
