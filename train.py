@@ -10,7 +10,7 @@ from gan import *
 class Trainer:
     def __init__(self, generator: GANGenerator, discriminator: GANDiscriminator, gen_optim, disc_optim,
                  gp_weight=10, critic_iterations=5, print_every=50,
-                 device='cuda'):
+                 device='cpu'):
         self.generator: GANGenerator = generator
         self.gen_optim = gen_optim
         self.discriminator = discriminator
@@ -30,8 +30,8 @@ class Trainer:
         batch_size = real_imgs.size()[0]
         fake_imgs, fake_classes = self.sample_generator(batch_size)
 
-        real_imgs.to(self.device)
-        real_classes.to(self.device)
+        real_imgs = real_imgs.to(self.device)
+        real_classes = real_classes.to(self.device)
 
         disc_source_real, disc_class_real = self.discriminator(real_imgs)
         disc_source_real_loss = F.binary_cross_entropy(disc_source_real,
@@ -42,14 +42,13 @@ class Trainer:
         disc_real_loss = disc_source_real_loss + disc_class_real_loss
         disc_real_loss.backward()
         disc_source_fake, disc_class_fake = self.discriminator(fake_imgs)
-
         disc_source_fake_loss = F.binary_cross_entropy(disc_source_fake,
                                                        torch.zeros_like(disc_source_fake, dtype=torch.float32).to(
                                                            self.device))
         disc_class_fake_loss = F.binary_cross_entropy(disc_class_fake, fake_classes)
 
         gradient_penalty = self.gradient_penalty(real_imgs, fake_imgs)
-        self.losses['GP'].append(gradient_penalty.data[0])
+        self.losses['GP'].append(gradient_penalty.data)
 
         self.disc_optim.zero_grad()
         disc_fake_loss = disc_class_fake_loss + disc_source_fake_loss + gradient_penalty
@@ -57,8 +56,8 @@ class Trainer:
 
         self.disc_optim.step()
 
-        self.losses['D_real'].append(disc_real_loss.data[0])
-        self.losses['D_fake'].append(disc_fake_loss.data[0])
+        self.losses['D_real'].append(disc_real_loss.data)
+        self.losses['D_fake'].append(disc_fake_loss.data)
 
     def gen_train_step(self, data):
         """ """
@@ -74,7 +73,7 @@ class Trainer:
         gen_loss.backward()
         self.gen_optim.step()
 
-        self.losses['G'].append(gen_loss.data[0])
+        self.losses['G'].append(gen_loss.data)
 
     def gradient_penalty(self, real_data, generated_data):
         batch_size = real_data.size()[0]
@@ -82,8 +81,8 @@ class Trainer:
         alpha = torch.rand(batch_size, 1, 1, 1)
         alpha = alpha.expand_as(real_data)
         interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
-        interpolated.to(self.device)
-
+        interpolated = interpolated.to(self.device)
+        interpolated.requires_grad_(True)
         prob_interpolated, _ = self.discriminator(interpolated)
 
         gradients = torch_grad(outputs=prob_interpolated, inputs=interpolated,
@@ -92,7 +91,7 @@ class Trainer:
                                create_graph=True, retain_graph=True)[0]
 
         gradients = gradients.view(batch_size, -1)
-        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data[0])
+        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data)
 
         gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
 
