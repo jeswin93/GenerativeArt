@@ -4,6 +4,7 @@ import torch
 import torch.functional as F
 from torch.autograd import grad as torch_grad
 from torchvision.utils import make_grid
+from tqdm import tqdm
 
 from gan import *
 
@@ -97,7 +98,7 @@ class Trainer:
 
         return self.gp_weight * ((gradients_norm - 1) ** 2).mean()
 
-    def _train_epoch(self, data_loader):
+    def _train_epoch(self, data_loader, progress):
         for i, data in enumerate(data_loader):
             images, class_vecs = data
             self.num_steps += 1
@@ -108,35 +109,41 @@ class Trainer:
                 self.discriminator.eval()
                 self.generator.train()
                 self.gen_train_step(images)
+            progress.set_description(f'{i+1}/{len(data_loader)}')
 
-            if i+1 % self.print_every == 0:
-                print("Iteration {}".format(i + 1))
-                print("D: {}".format(self.losses['D_real'][-1]))
-                print("GP: {}".format(self.losses['GP'][-1]))
-                print("Gradient norm: {}".format(self.losses['gradient_norm'][-1]))
-                if self.num_steps > self.disc_iterations:
-                    print("G: {}".format(self.losses['G'][-1]))
+            # if i+1 % self.print_every == 0:
+            #     print("Iteration {}".format(i + 1))
+            #     print("D: {}".format(self.losses['D_real'][-1]))
+            #     print("GP: {}".format(self.losses['GP'][-1]))
+            #     print("Gradient norm: {}".format(self.losses['gradient_norm'][-1]))
+            #     if self.num_steps > self.disc_iterations:
+            #         print("G: {}".format(self.losses['G'][-1]))
 
     def train(self, data_loader, epochs, save_training_gif=True):
 
         training_progress_images = []
+        with tqdm(range(epochs)) as progress:
+            for epoch in progress:
+                self._train_epoch(data_loader, progress)
 
-        for epoch in range(epochs):
-            self._train_epoch(data_loader)
+                if save_training_gif:
+                    sample_count = 8*8
+                    fixed_latents = torch.from_numpy(np.load(f'hardcoded_noise_{sample_count}.npy')).to(self.device)
+                    fixed_classes = torch.from_numpy(np.load(f'hardcoded_class_{sample_count}.npy')).to(self.device)
+                    data = self.generator(fixed_classes, fixed_latents).cpu().data
+                    img_grid = make_grid(data)
+                    img_grid = np.transpose(img_grid.numpy(), (1, 2, 0))
+                    imageio.imwrite(f'output/epoch_{epoch+1}.png', img_grid)
+                    training_progress_images.append(img_grid)
+
+                # Save models
+                if (epoch) % 10 == 0:
+                    torch.save(self.generator.state_dict(), f'./gen_{epoch+1}.pt')
+                    torch.save(self.discriminator.state_dict(), f'./dis_{epoch+1}.pt')
 
             if save_training_gif:
-                sample_count = 8*8
-                fixed_latents = torch.from_numpy(np.load(f'hardcoded_noise_{sample_count}.npy')).to(self.device)
-                fixed_classes = torch.from_numpy(np.load(f'hardcoded_class_{sample_count}.npy')).to(self.device)
-                data = self.generator(fixed_classes, fixed_latents).cpu().data
-                img_grid = make_grid(data)
-                img_grid = np.transpose(img_grid.numpy(), (1, 2, 0))
-                imageio.imwrite(f'output/epoch_{epoch}.png', img_grid)
-                training_progress_images.append(img_grid)
-
-        if save_training_gif:
-            imageio.mimsave(f'output/training_{epochs}_epochs.gif',
-                            training_progress_images)
+                imageio.mimsave(f'output/training_{epochs}_epochs.gif',
+                                training_progress_images)
 
     def sample_generator(self, batch_size):
         sample_noise = self.generator.sample_noise(batch_size)
