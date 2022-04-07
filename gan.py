@@ -92,6 +92,7 @@ class GANGenerator(nn.Module):
 
         self.conditioning_4 = get_linear(num_classes, 32 * 32 * model_dim * 2)
         self.upsampling_4 = get_conv_trans(model_dim, 3)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, class_vec, noise):
         noise = torch.cat([noise, class_vec], dim=-1)
@@ -111,7 +112,7 @@ class GANGenerator(nn.Module):
         conditioning = self.conditioning_4(class_vec).reshape(-1, self.model_dim * 2, 32, 32)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_4(input)
-        output = F.tanh(input)
+        output = self.sigmoid(input)
         return output
 
     def sample_noise(self, batch_size):
@@ -165,12 +166,13 @@ class GANDiscriminator(nn.Module):
 
 
 if __name__ == '__main__':
-    disc = GANDiscriminator(10, 64, Nonlinearity.LeakyRelu, True)
-    input = torch.randn([1, 3, 64, 64])
-    disc(input)
-    gen = GANGenerator(10, 64, Nonlinearity.LeakyRelu, True)
-    class_vec = torch.zeros([1, 10])
-    class_vec[0, 0] = 1
-    noise = torch.randn([1, 128])
-    x = gen(class_vec, noise)
-    print(x)
+    pass
+    # disc = GANDiscriminator(10, 64, Nonlinearity.LeakyRelu, True)
+    # input = torch.randn([1, 3, 64, 64])
+    # disc(input)
+    # gen = GANGenerator(10, 64, Nonlinearity.LeakyRelu, True)
+    # class_vec = torch.zeros([1, 10])
+    # class_vec[0, 0] = 1
+    # noise = torch.randn([1, 128])
+    # x = gen(class_vec, noise)
+    # print(x)

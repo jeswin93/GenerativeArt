@@ -27,7 +27,7 @@ if __name__ == '__main__':
     epochs = 200
     trainer = Trainer(generator, discriminator, gen_optim, disc_optim)
     dataset = WikiArt('wikiart_res_64')
-    data_loader = DataLoader(dataset, )
+    data_loader = DataLoader(dataset, batch_size = batch_size)
     trainer.train(data_loader, epochs, save_training_gif=True)
 
     # Save models

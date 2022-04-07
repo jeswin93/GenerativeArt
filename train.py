@@ -1,5 +1,6 @@
 import imageio
 import numpy as np
+import torch
 import torch.functional as F
 from torch.autograd import grad as torch_grad
 from torchvision.utils import make_grid
@@ -10,7 +11,7 @@ from gan import *
 class Trainer:
     def __init__(self, generator: GANGenerator, discriminator: GANDiscriminator, gen_optim, disc_optim,
                  gp_weight=10, critic_iterations=5, print_every=50,
-                 device='cpu'):
+                 device='cuda'):
         self.generator: GANGenerator = generator
         self.gen_optim = gen_optim
         self.discriminator = discriminator
@@ -26,7 +27,7 @@ class Trainer:
         self.discriminator.to(device)
 
     def disc_train_step(self, real_imgs, real_classes):
-
+        self.disc_optim.zero_grad()
         batch_size = real_imgs.size()[0]
         fake_imgs, fake_classes = self.sample_generator(batch_size)
 
@@ -50,7 +51,6 @@ class Trainer:
         gradient_penalty = self.gradient_penalty(real_imgs, fake_imgs)
         self.losses['GP'].append(gradient_penalty.data)
 
-        self.disc_optim.zero_grad()
         disc_fake_loss = disc_class_fake_loss + disc_source_fake_loss + gradient_penalty
         disc_fake_loss.backward()
 
@@ -68,7 +68,7 @@ class Trainer:
 
         disc_source_fake, disc_class_fake = self.discriminator(fake_image)
         gen_source_loss = F.binary_cross_entropy(disc_source_fake, torch.ones_like(disc_source_fake, dtype=torch.float32))
-        gen_class_loss = F.binary_cross_entropy(fake_classes, disc_class_fake)
+        gen_class_loss = F.binary_cross_entropy(disc_class_fake, fake_classes)
         gen_loss = gen_source_loss + gen_class_loss
         gen_loss.backward()
         self.gen_optim.step()
@@ -79,7 +79,7 @@ class Trainer:
         batch_size = real_data.size()[0]
 
         alpha = torch.rand(batch_size, 1, 1, 1)
-        alpha = alpha.expand_as(real_data)
+        alpha = alpha.expand_as(real_data).to(self.device)
         interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
         interpolated = interpolated.to(self.device)
         interpolated.requires_grad_(True)
@@ -101,11 +101,15 @@ class Trainer:
         for i, data in enumerate(data_loader):
             images, class_vecs = data
             self.num_steps += 1
+            self.generator.eval()
+            self.discriminator.train()
             self.disc_train_step(images, class_vecs)
             if self.num_steps % self.disc_iterations == 0:
+                self.discriminator.eval()
+                self.generator.train()
                 self.gen_train_step(images)
 
-            if i % self.print_every == 0:
+            if i+1 % self.print_every == 0:
                 print("Iteration {}".format(i + 1))
                 print("D: {}".format(self.losses['D_real'][-1]))
                 print("GP: {}".format(self.losses['GP'][-1]))
@@ -124,7 +128,8 @@ class Trainer:
                 sample_count = 8*8
                 fixed_latents = torch.from_numpy(np.load(f'hardcoded_noise_{sample_count}.npy')).to(self.device)
                 fixed_classes = torch.from_numpy(np.load(f'hardcoded_class_{sample_count}.npy')).to(self.device)
-                img_grid = make_grid(self.generator(fixed_classes, fixed_latents).cpu().data)
+                data = self.generator(fixed_classes, fixed_latents).cpu().data
+                img_grid = make_grid(data)
                 img_grid = np.transpose(img_grid.numpy(), (1, 2, 0))
                 imageio.imwrite(f'output/epoch_{epoch}.png', img_grid)
                 training_progress_images.append(img_grid)
