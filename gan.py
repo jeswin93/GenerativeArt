@@ -90,8 +90,14 @@ class GANGenerator(nn.Module):
             get_batch_norm_2d(self.batch_normal, model_dim * 2)
         )
 
-        self.conditioning_4 = get_linear(num_classes, 32 * 32 * model_dim * 2)
-        self.upsampling_4 = get_conv_trans(model_dim, 3)
+        self.conditioning_3_5 = get_linear(num_classes, 32 * 32 * model_dim * 2)
+        self.upsampling_3_5 = nn.Sequential(
+            get_conv_trans(model_dim, model_dim),
+            get_batch_norm_2d(self.batch_normal, model_dim)
+        )
+
+        self.conditioning_4 = get_linear(num_classes, 64 * 64 * model_dim)
+        self.upsampling_4 = get_conv_trans(model_dim // 2, 3)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, class_vec, noise):
@@ -99,17 +105,25 @@ class GANGenerator(nn.Module):
 
         input = self.input_layer(noise)
         input = input.reshape(-1, 8 * self.model_dim * 2, 4, 4)
+
         input = self.batch_norm_1(input)
         conditioning = self.conditioning_1(class_vec).reshape(-1, 8 * self.model_dim * 2, 4, 4)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_1(input)
+
         conditioning = self.conditioning_2(class_vec).reshape(-1, 4 * self.model_dim * 2, 8, 8)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_2(input)
+
         conditioning = self.conditioning_3(class_vec).reshape(-1, 2 * self.model_dim * 2, 16, 16)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_3(input)
-        conditioning = self.conditioning_4(class_vec).reshape(-1, self.model_dim * 2, 32, 32)
+
+        conditioning = self.conditioning_3_5(class_vec).reshape(-1, self.model_dim * 2, 32, 32)
+        input = self.gated_nonlinearity(input, conditioning)
+        input = self.upsampling_3_5(input)
+
+        conditioning = self.conditioning_4(class_vec).reshape(-1, self.model_dim, 64, 64)
         input = self.gated_nonlinearity(input, conditioning)
         input = self.upsampling_4(input)
         output = self.sigmoid(input)
@@ -148,10 +162,13 @@ class GANDiscriminator(nn.Module):
             # block 4
             get_conv(4 * model_dim, 8 * model_dim),
             get_batch_norm_2d(batch_norm, 8 * model_dim),
+            # block 5
+            get_conv(8 * model_dim, 16 * model_dim),
+            get_batch_norm_2d(batch_norm, 16 * model_dim),
         )
 
-        self.source_output = nn.Linear(4 * 4 * 8 * model_dim, 1)
-        self.class_output = nn.Linear(4 * 4 * 8 * model_dim, num_class)
+        self.source_output = nn.Linear(2 * 4 * 4 * 8 * model_dim, 1)
+        self.class_output = nn.Linear(2 * 4 * 4 * 8 * model_dim, num_class)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
