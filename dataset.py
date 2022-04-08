@@ -5,6 +5,7 @@ import torch.utils.data
 from PIL import Image
 import numpy as np
 import torchvision.transforms as transforms
+import config
 
 
 class WikiArt(torch.utils.data.Dataset):
@@ -50,7 +51,7 @@ def gen_hardcoded_noise_class(batch_size, class_num=14, latent_dim = 128):
     np.save(f'hardcoded_class_{batch_size}.npy', classes)
     np.save(f'hardcoded_noise_{batch_size}.npy', noise)
 
-def get_class_num(data_dir = 'wikiart_res_64'):
+def get_class_num(data_dir = config.dataset_path):
     return len(os.listdir(data_dir))
 
 if __name__ == '__main__':

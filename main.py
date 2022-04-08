@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 from gan import GANGenerator, GANDiscriminator, Nonlinearity
 from train import Trainer
-from dataset import WikiArt, get_class_num
+from dataset import WikiArt, get_class_num, gen_hardcoded_noise_class
 from torch.utils.data.dataloader import DataLoader
 
 batch_size = 100
@@ -13,7 +13,7 @@ latent_dim = 128
 
 if __name__ == '__main__':
 
-    img_size = (32, 32, 1)
+    gen_hardcoded_noise_class(8*8, num_classes)
 
     generator = GANGenerator(num_classes, model_dim, True, latent_dim)
     discriminator = GANDiscriminator(num_classes, model_dim, Nonlinearity.LeakyRelu, True)

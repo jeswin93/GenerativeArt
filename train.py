@@ -11,7 +11,7 @@ from gan import *
 
 class Trainer:
     def __init__(self, generator: GANGenerator, discriminator: GANDiscriminator, gen_optim, disc_optim,
-                 gp_weight=10, critic_iterations=5, print_every=50,
+                 gp_weight=10, critic_iterations=5, print_every=30,
                  device='cuda'):
         self.generator: GANGenerator = generator
         self.gen_optim = gen_optim
@@ -42,7 +42,7 @@ class Trainer:
         disc_class_real_loss = F.binary_cross_entropy(disc_class_real, real_classes)
 
         disc_real_loss = disc_source_real_loss + disc_class_real_loss
-        disc_real_loss.backward()
+
         disc_source_fake, disc_class_fake = self.discriminator(fake_imgs)
         disc_source_fake_loss = F.binary_cross_entropy(disc_source_fake,
                                                        torch.zeros_like(disc_source_fake, dtype=torch.float32).to(
@@ -52,8 +52,10 @@ class Trainer:
         gradient_penalty = self.gradient_penalty(real_imgs, fake_imgs)
         self.losses['GP'].append(gradient_penalty.data)
 
-        disc_fake_loss = disc_class_fake_loss + disc_source_fake_loss + gradient_penalty
-        disc_fake_loss.backward()
+        disc_fake_loss = disc_class_fake_loss + disc_source_fake_loss
+
+        disc_total_loss = disc_real_loss + disc_fake_loss + gradient_penalty
+        disc_total_loss.backward()
 
         self.disc_optim.step()
 
@@ -111,7 +113,7 @@ class Trainer:
                 self.gen_train_step(images)
             progress.set_description(f'{i+1}/{len(data_loader)}')
 
-            # if i+1 % self.print_every == 0:
+            # if (i+1) % self.print_every == 0:
             #     print("Iteration {}".format(i + 1))
             #     print("D: {}".format(self.losses['D_real'][-1]))
             #     print("GP: {}".format(self.losses['GP'][-1]))
@@ -133,13 +135,15 @@ class Trainer:
                     data = self.generator(fixed_classes, fixed_latents).cpu().data
                     img_grid = make_grid(data)
                     img_grid = np.transpose(img_grid.numpy(), (1, 2, 0))
+                    img_grid = img_grid * 255
+                    img_grid = img_grid.astype(np.uint8)
                     imageio.imwrite(f'output/epoch_{epoch+1}.png', img_grid)
                     training_progress_images.append(img_grid)
 
                 # Save models
                 if (epoch) % 10 == 0:
-                    torch.save(self.generator.state_dict(), f'./gen_{epoch+1}.pt')
-                    torch.save(self.discriminator.state_dict(), f'./dis_{epoch+1}.pt')
+                    torch.save(self.generator.state_dict(), f'checkpoints/gen_{epoch+1}.pt')
+                    torch.save(self.discriminator.state_dict(), f'checkpoints/dis_{epoch+1}.pt')
 
             if save_training_gif:
                 imageio.mimsave(f'output/training_{epochs}_epochs.gif',
