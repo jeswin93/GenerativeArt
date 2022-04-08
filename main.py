@@ -2,12 +2,12 @@ import torch
 import torch.optim as optim
 from gan import GANGenerator, GANDiscriminator, Nonlinearity
 from train import Trainer
-from dataset import WikiArt
+from dataset import WikiArt, get_class_num
 from torch.utils.data.dataloader import DataLoader
 
-batch_size = 10
+batch_size = 100
 model_dim = 128
-num_classes = 27
+num_classes = get_class_num()
 latent_dim = 128
 
 
@@ -29,9 +29,6 @@ if __name__ == '__main__':
     data_loader = DataLoader(dataset, batch_size = batch_size)
     trainer.train(data_loader, epochs, save_training_gif=True)
 
-    # Save models
-    name = 'mnist_model'
-    torch.save(trainer.G.state_dict(), './gen_' + name + '.pt')
-    torch.save(trainer.D.state_dict(), './dis_' + name + '.pt')
+    
 
 
